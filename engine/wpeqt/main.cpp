@@ -4593,7 +4593,16 @@ int main(int argc, char **argv) {
         QObject::connect(&engine, &WpeEngine::settleFlashChanged, view, &WpeView::setSettleFlash,
                          Qt::QueuedConnection);            // same path again
         QObject::connect(&engine, &WpeEngine::urlChanged, view,   // a new page resets the bar until
-                         [view]{ view->setReadProgress(-1); });   // the first scroll/restore answers
+                         [view, &engine]{                          // the first scroll/restore answers
+                             view->setReadProgress(-1);
+                             // Libby mode: the toolbar belongs on shelf/search pages (back after leaving a book) and
+                             // is out of the way inside a book or magazine (long-press brings it back there).
+                             if (g_libbyMode) {
+                                 const bool inBook = engine.keyPaging();
+                                 if (inBook && view->chromeOn()) view->setChromeOn(false);
+                                 else if (!inBook && !view->chromeOn()) view->setChromeOn(true);
+                             }
+                         });
         QObject::connect(&engine, &WpeEngine::renderingChanged, view,
                          [view](bool on){ view->setRendering(on); }, Qt::QueuedConnection);
         // URL entry: the on-screen keyboard's Go (WpeView::urlEntered) -> load it (engine.loadUrl
@@ -4737,7 +4746,10 @@ int main(int argc, char **argv) {
                 // Page-turn zones: when chrome is HIDDEN use left/right edges (reading mode).
                 // When chrome is SHOWN, edges would steal link taps — only swipe pages then.
                 // Swipe always pages (connected above).
-                if (!view->chromeOn()) {
+                // Libby's shelf/search/menus are not paginated: the edge zones there would swallow taps on
+                // content at the screen edge (a cover, the mini player's buttons), so skip them.
+                const bool libbyPlainPage = g_libbyMode && !engine.keyPaging();
+                if (!view->chromeOn() && !libbyPlainPage) {
                     rmweb::TapZones z;
                     z.edgeFrac = 0.15;   // 15% edges (was 22% — too greedy, ate link taps)
                     const auto a = rmweb::classifyTap(x, y, kPanelW, kPanelH, z);
@@ -4759,6 +4771,11 @@ int main(int argc, char **argv) {
         // A content tap with no link underneath -> the old behaviour: toggle the chrome (show <-> hide).
         QObject::connect(&engine, &WpeEngine::linkMissed, win ? win : qobject_cast<QObject*>(&app),
             [view, &engine]{
+                if (g_libbyMode && !engine.keyPaging()) {   // Libby shelf/search: the bar stays, the tap is a real click
+                    if (!view->chromeOn()) view->setChromeOn(true);
+                    view->forceNextContent(); engine.clickLastTap();
+                    return;
+                }
                 if (view->chromeOn()) view->setChromeOn(false);
                 else if (engine.keyPaging()) { view->forceNextContent(); engine.clickLastTap(); }
                 else view->setChromeOn(true);

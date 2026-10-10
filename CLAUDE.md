@@ -75,6 +75,16 @@ Host tests: `./scripts/run-tests.sh`. The version is in `LIBBY_VERSION`.
   (window mode has no `#grab`: copy `/dev/shm/qtfb_*`, 1620x2160 RGBA, and convert it). Per-thread CPU:
   diff `/proc/<WPEWebProcess>/task/*/stat` utime+stime. Put debug env AFTER `rmweb-env.sh` only for runtime
   variables; remove it again afterwards.
+- **Libby mode toolbar/taps:** on shelf/search pages the bar is permanent and edge taps go to Libby; inside a book or
+  magazine (`/open/`) the bar starts hidden (long-press brings it back) and the left/right 15% edges turn pages.
+  Before this, an empty-space tap on the shelf hid the bar and the page-turn edges then swallowed taps on covers.
+- **Magazine reading position is not persisted by Libby's web app.** The reader reports `spinePosition` /
+  `percentageOfBook` on each turn (postMessage `dervish:activity:record`, label `position`), but they stay in the
+  page's memory: no server request, nothing in `dewey:journey:all` (books do get an entry there). Leaving via Libby's
+  own back button and re-entering resumes within a session; closing the AppLoad window loses it. Minimise instead
+  of closing (idle cost measured: ~1% of one core). A resume feature would need the reader's goto message.
+- A source that gives the tablet only 50 mA (`/sys/class/power_supply/max77963-charger/current_max`) will not charge it
+  under load; it also means no USB networking (`10.11.99.1`). Use a wall adapter or another cable.
 - BusyBox quirks: `head -N` fails (use `head -n N`), `pgrep -x` and `getconf` are unreliable or missing.
 
 ## Engine facts that matter
