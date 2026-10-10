@@ -61,6 +61,22 @@ Host tests: `./scripts/run-tests.sh`. The version is in `LIBBY_VERSION`.
   frame, so remove it afterwards. A longer harness is `scripts/debug/user-debug.js` (evaluates posted code,
   debug use only).
 
+## Performance and debugging on the Paper Pro (measured 2026-10-09)
+- **Page turns are CPU-bound in the WebKit web process,** not the network or panel: its main thread sat at ~90% of
+  one core, with ~1 core more in llvmpipe compositing. Magazine page turn, key to new frame: 4.5 s median with the
+  interpreter, ~3 s with the baseline JIT + 3 Skia painting threads (`libby-window.sh` sets both). DPR 1.5 was not
+  faster (3.5 s) and looks softer; kept at 2.0. Memory is not growing (web process 640-760 MB, WebKit trims itself).
+- `RMWEB_SKIA_THREADS` / `RMWEB_JIT` are read when `rmweb-env.sh` is sourced: export them before it.
+- **Magazine article view** scrolls only with a real wheel event, and the paged view ignores wheel events (and the
+  article view ignores arrow keys), so a vertical swipe on `/open/magazine/` sends both (`sendPageWheel`).
+- **Measuring without a debugger:** `QT_MESSAGE_PATTERN="%{time boot} %{message}"` and
+  `QT_LOGGING_RULES=rmweb.engine.debug=true` in the launcher timestamp the log (`[page] key` to `frame N ... NEW`
+  is the render latency); `RMWEB_DEBUG_JSFILE=/tmp/rmdbg.js` runs `#key R|L`, `#wheel x y dy`, `#click x y`
+  (window mode has no `#grab`: copy `/dev/shm/qtfb_*`, 1620x2160 RGBA, and convert it). Per-thread CPU:
+  diff `/proc/<WPEWebProcess>/task/*/stat` utime+stime. Put debug env AFTER `rmweb-env.sh` only for runtime
+  variables; remove it again afterwards.
+- BusyBox quirks: `head -N` fails (use `head -n N`), `pgrep -x` and `getconf` are unreliable or missing.
+
 ## Engine facts that matter
 - Rendering is CPU-only: Skia CPU painting, Mesa llvmpipe software EGL. JSC runs interpreter-only
   (JIT is broken on this toolchain), so heavy JS pages are slow.

@@ -23,6 +23,10 @@ if [ ! -e /usr/libexec/wpe-webkit-2.0 ]; then
   mount -t overlay overlay -o "lowerdir=/usr/libexec,upperdir=$W/ovl/upper,workdir=$W/ovl/work" /usr/libexec \
     || { echo "[window] overlay mount failed" >> "$LOG"; exit 1; }
 fi
+# Engine speed (measured on a Paper Pro, magazine page turns): the baseline JIT and three Skia painting
+# threads cut the median key-to-frame time from 4.5 s to about 3 s. rmweb-env.sh reads both when it is
+# sourced, so they must be set BEFORE it; override from the environment (RMWEB_JIT=0, RMWEB_SKIA_THREADS=0).
+export RMWEB_JIT="${RMWEB_JIT:-1}" RMWEB_SKIA_THREADS="${RMWEB_SKIA_THREADS:-3}"
 # shellcheck source=/dev/null
 . "$R/rmweb-env.sh"
 # No panel of our own: Qt is only used for painting into the window's framebuffer.
