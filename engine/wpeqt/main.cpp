@@ -1594,6 +1594,9 @@ public Q_SLOTS:
     static bool keyPagingUrl(const char *uri) {
         return libbyUrl(uri) && std::string(uri).find("/open/") != std::string::npos;
     }
+    static bool magazineUrl(const char *uri) {
+        return libbyUrl(uri) && std::string(uri).find("/open/magazine/") != std::string::npos;
+    }
     // Deliver a REAL Right/Left arrow key press to the page through WPE's input path (worker thread).
     // Everything else in this shell drives the page with synthetic JS; a trusted key event is what a
     // web reader's own keyboard handler expects.
@@ -1652,6 +1655,15 @@ public Q_SLOTS:
         WPEEvent *st = wpe_event_scroll_new(v, WPE_INPUT_SOURCE_MOUSE, t + 2, static_cast<WPEModifiers>(0),
                                             0, 0, TRUE, TRUE, x, y);
         if (st) { wpe_view_event(v, st); wpe_event_unref(st); }
+    }
+    // One "page" of wheel scroll at the middle of the view (dy > 0 = next = content moves up). Measured on
+    // device: a precise delta of d view px moves the content 2.5*d/zoom CSS px, so 0.28 of the view
+    // height is a bit under one visible page.
+    void sendPageWheel(double dy) {
+        WPEView *v = webkit_web_view_get_wpe_view(m_view);
+        if (!v) return;
+        const double w = wpe_view_get_width(v), h = wpe_view_get_height(v);
+        sendWheel(w / 2, h / 2, (dy > 0 ? -1 : 1) * 0.28 * h);
     }
     // Real mouse drag in the page (panel px in; view coords = panel px / dpr). phase 0 presses the
     // button at (x,y), 1 moves with it held, 2 releases — WebKit turns that into a text selection.
@@ -1791,17 +1803,17 @@ private:
         // Paginated web readers turn their own pages — hand them an arrow key instead of scrolling.
         if (self->m_view && keyPagingUrl(webkit_web_view_get_uri(self->m_view))) {
             self->sendPageKey(m->dy > 0 ? +1 : -1);
+            // A magazine also has an article view that scrolls: the arrow keys do nothing there, a real
+            // wheel scroll moves it. In the paged view the wheel does nothing (both measured on device),
+            // so sending both needs no mode detection. Books are left on keys only.
+            if (magazineUrl(webkit_web_view_get_uri(self->m_view))) self->sendPageWheel(m->dy);
             return G_SOURCE_REMOVE;
         }
         // The rest of Libby (shelf, search results, ...) scrolls an inner list that fills itself in as
         // it moves. The scroll-and-untrap JS below leaves it blank, so hand it a real wheel scroll at
-        // the middle of the view instead. Measured on device: a precise delta of d view px moves the
-        // list 2.5*d/zoom CSS px, so 0.28 of the view height is a bit under one visible list page.
+        // the middle of the view instead.
         if (self->m_view && libbyUrl(webkit_web_view_get_uri(self->m_view))) {
-            if (WPEView *v = webkit_web_view_get_wpe_view(self->m_view)) {
-                const double w = wpe_view_get_width(v), h = wpe_view_get_height(v);
-                self->sendWheel(w / 2, h / 2, (m->dy > 0 ? -1 : 1) * 0.28 * h);
-            }
+            self->sendPageWheel(m->dy);
             return G_SOURCE_REMOVE;
         }
         if (self->m_view) {
