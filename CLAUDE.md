@@ -93,6 +93,17 @@ Host tests: `./scripts/run-tests.sh`. The version is in `LIBBY_VERSION`.
   under load; it also means no USB networking (`10.11.99.1`). Use a wall adapter or another cable.
 - BusyBox quirks: `head -N` fails (use `head -n N`), `pgrep -x` and `getconf` are unreliable or missing.
 
+## Boundaries (do not cross)
+- **Do not deobfuscate or mine Libby's scripts, and do not imitate its protocol.** Libby's `main.js` opens with
+  OverDrive's notice that deobfuscating the code, or building a client that imitates its requests to OverDrive's
+  services, is prohibited by their Terms and Conditions. That rules out extracting the reader's internal message
+  names/formats to drive it (for example a "jump to page" command) and replaying server calls. Observing our own
+  session (what the page stores, which input we send, timing) is how the findings above were made. The app only
+  sends input a user could (touches, keys, clicks, wheel). Do not add features that extract or save book content
+  either (see the README).
+- Closing the AppLoad window loses the magazine's page (Libby keeps it in memory only); the supported answer is to
+  minimise instead. A resume feature would need the forbidden internals, unless it replays ordinary page turns.
+
 ## Engine facts that matter
 - Rendering is CPU-only: Skia CPU painting, Mesa llvmpipe software EGL. JSC runs interpreter-only
   (JIT is broken on this toolchain), so heavy JS pages are slow.
