@@ -78,6 +78,12 @@ Host tests: `./scripts/run-tests.sh`. The version is in `LIBBY_VERSION`.
 - **Libby mode toolbar/taps:** on shelf/search pages the bar is permanent and edge taps go to Libby; inside a book or
   magazine (`/open/`) the bar starts hidden (long-press brings it back) and the left/right 15% edges turn pages.
   Before this, an empty-space tap on the shelf hid the bar and the page-turn edges then swallowed taps on covers.
+- **Libby's reader control panel** (Back/search bar, page scrubber, `◂ 4p`/`14p ▸`, "return to page N" hand) lives in the
+  cross-origin reader frame, so the top document cannot see it. A built-in child-frame script (`kFrameOverlayJs`)
+  reports whether the element at the frame's bottom centre sits inside `.navigation-footer` (panel up) or the book layer
+  (hidden). While it is up, finger touches that start in the bottom 20% become real mouse press/drag/release
+  (`penDrag` path), so taps click and drags move the scrubber; with it hidden they stay page-turn gestures. An earlier
+  "anything but an IFRAME" check stuck on "up" for the whole session: verify detector changes with `[overlay]` log lines.
 - **Magazine reading position is not persisted by Libby's web app.** The reader reports `spinePosition` /
   `percentageOfBook` on each turn (postMessage `dervish:activity:record`, label `position`), but they stay in the
   page's memory: no server request, nothing in `dewey:journey:all` (books do get an entry there). Leaving via Libby's

@@ -183,6 +183,10 @@ static bool qtfbConnect() {
 }
 // Last finger contact (monotonic us) — the sleep watcher's idle timer reads it.
 static std::atomic<gint64> g_lastActivityUs{0};
+// Libby reader: its control panel (page scrubber, jump buttons, "return to page N" hand) is showing. Set from a
+// script in the reader frame (rmwebOverlay); the touch thread reads it to forward bottom-band touches as real
+// pointer events instead of page-turn gestures.
+static std::atomic<bool> g_overlayUp{false};
 // Set from the power-button press until the tablet is back: the "asleep" notice is already on
 // screen, so touches are dropped — to the user it is asleep, even while the suspend is pending.
 static std::atomic<bool> g_sleepPending{false};
@@ -478,6 +482,31 @@ public Q_SLOTS:
                     Q_EMIT self->fieldFocused(value, false, QString());
                 }), this);
             webkit_user_content_manager_register_script_message_handler(m_ucm, "rmwebField", nullptr);
+            // Is Libby's control panel up? It lives in the cross-origin reader frame, so the top document cannot
+            // tell. In the frame that hosts the page iframes, the element near the bottom centre is inside the
+            // panel's footer (.navigation-footer: chapter bar, scrubber, "return to page" hand) while it shows and
+            // part of the book layer when it is hidden (measured on Libby's reader, October 2026).
+            static const char *kFrameOverlayJs =
+                "(function(){if(window.top===window)return;var last='';"
+                "function chk(){if(!document.querySelector('iframe'))return;var W=innerWidth,H=innerHeight;if(!W||!H)return;"
+                "var e=document.elementFromPoint(W/2,H*0.88);var t=e?e.tagName:'';"
+                "var up=!!(e&&e.closest&&e.closest('.navigation-footer'));var s=(up?'1':'0')+t;"
+                "if(s!==last){last=s;try{window.webkit.messageHandlers.rmwebOverlay.postMessage(s);}catch(x){}}}"
+                "setInterval(chk,500);"
+                "['click','pointerup','touchend'].forEach(function(n){document.addEventListener(n,function(){"
+                "setTimeout(chk,150);setTimeout(chk,600);},true);});})();";
+            WebKitUserScript *os = webkit_user_script_new(kFrameOverlayJs, WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+                WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END, nullptr, nullptr);
+            webkit_user_content_manager_add_script(m_ucm, os);
+            webkit_user_script_unref(os);
+            g_signal_connect(m_ucm, "script-message-received::rmwebOverlay",
+                G_CALLBACK(+[](WebKitUserContentManager *, JSCValue *v, gpointer) {
+                    char *c = jsc_value_to_string(v);
+                    const bool up = c && c[0] == '1';
+                    if (g_overlayUp.exchange(up) != up) qInfo("[overlay] control panel %s (%s)", up ? "up" : "hidden", c ? c + 1 : "");
+                    g_free(c);
+                }), nullptr);
+            webkit_user_content_manager_register_script_message_handler(m_ucm, "rmwebOverlay", nullptr);
         }
         // Readability user stylesheet (kSiteCss): keep wide media/tables from forcing horizontal scroll on the
         // narrow viewport. Applies to every page; reader mode replaces the DOM so it's harmless there too.
@@ -2181,6 +2210,7 @@ private:
         const char *u = webkit_web_view_get_uri(WEBKIT_WEB_VIEW(obj));
         qInfo("[nav] uri=%s", u ? u : "");
         self->m_keyPaging.store(keyPagingUrl(u), std::memory_order_release);
+    g_overlayUp.store(false);   // a new page: the panel state is re-reported by the frame script
         self->applyTopInset();
         if (libbyUrl(u)) self->probeLibbyTls();
         // Generated pages loaded with an about:blank base (address-bar search results) must not
@@ -4148,7 +4178,7 @@ private:
     // ignored (a resting palm). Contacts that start on the top edge belong to AppLoad's window-bar
     // gesture and are ignored entirely.
     void runQtfb() {
-        struct Contact { bool down = false, dragging = false; int id = -1, x0 = 0, y0 = 0, lx = 0, ly = 0;
+        struct Contact { bool down = false, dragging = false, ptr = false; int id = -1, x0 = 0, y0 = 0, lx = 0, ly = 0;
                          gint64 downUs = 0, lastMoveUs = 0; };
         Contact finger, pen;
         int seenTouch = 0, seenPen = 0;
@@ -4208,10 +4238,27 @@ private:
                 if (in.y < kTopEdge) continue;                               // AppLoad's window-bar gesture
                 finger = Contact{}; finger.down = true; finger.id = in.devId;
                 finger.x0 = finger.lx = in.x; finger.y0 = finger.ly = in.y; finger.downUs = now;
+                // Libby's control panel is up and the touch starts in its bottom band (scrubber, jump buttons,
+                // "return to page" hand): a real mouse press there, so a tap clicks and a drag moves the scrubber.
+                if (g_overlayUp.load() && in.y >= kPanelH * 80 / 100) {
+                    finger.ptr = true;
+                    Q_EMIT penDrag(0, clampX(finger.x0), clampY(finger.y0));
+                }
             } else if (in.inputType == kQtfbTouchUpdate && finger.down && in.devId == finger.id) {
                 finger.lx = in.x; finger.ly = in.y;
+                if (finger.ptr) {
+                    if (!finger.dragging && (abs(finger.lx - finger.x0) > kDragStart || abs(finger.ly - finger.y0) > kDragStart))
+                        finger.dragging = true;
+                    if (finger.dragging && now - finger.lastMoveUs >= 30000) {
+                        finger.lastMoveUs = now;
+                        Q_EMIT penDrag(1, clampX(finger.lx), clampY(finger.ly));
+                    }
+                }
             } else if (in.inputType == kQtfbTouchRelease && finger.down && in.devId == finger.id) {
-                finish(finger);
+                if (finger.ptr) {
+                    Q_EMIT penDrag(2, clampX(finger.dragging ? finger.lx : finger.x0), clampY(finger.dragging ? finger.ly : finger.y0));
+                    finger.down = false; finger.id = -1; finger.ptr = false;
+                } else finish(finger);
             }
         }
     }
