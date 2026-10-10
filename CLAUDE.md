@@ -33,14 +33,13 @@ docker build -f toolchain/Dockerfile -t rmweb-sdk .
 Host tests: `./scripts/run-tests.sh`. The version is in `LIBBY_VERSION`.
 
 ## The device
-- Paper Pro: `ssh root@10.11.99.1` over USB. BusyBox, so `head -n N`, `ps -ef`.
+Device-wide facts (SSH addresses, BusyBox quirks, the xochitl start limit, xovi/AppLoad, KOReader, charging
+behaviour, OS version policy) are in `../CLAUDE.md`. rmweb-specific:
 - Install target: `/home/root/xovi/exthome/appload/libby` (self-contained app folder). `/` is full and
   read-only; WebKit's helpers need an overlay on `/usr/libexec`, which `libby-window.sh` mounts.
 - Log: `rmweb.log` in the app folder. Profile: `/home/root/.rmweb` (settings, cookies). WebKit data:
   `/home/root/.local/share/wpe`.
-- AppLoad must support the device's OS. v0.5.3 crash-loops on 3.28; use a build from its `3.28` branch.
-- **xochitl start limit:** 4 starts in 10 minutes triggers an emergency reboot. Leave ~10 s between
-  launches and restarts; use `/home/root/xovi/start` (not a bare `systemctl restart xochitl`).
+- Leave ~10 s between launches and restarts (xochitl start limit, see `../CLAUDE.md`).
 
 ## Paper Pro findings (this fork)
 - **Aspect ratio:** the manifest uses `"original"` (upstream's rmweb app does too). `"move"` gave a
@@ -89,9 +88,6 @@ Host tests: `./scripts/run-tests.sh`. The version is in `LIBBY_VERSION`.
   page's memory: no server request, nothing in `dewey:journey:all` (books do get an entry there). Leaving via Libby's
   own back button and re-entering resumes within a session; closing the AppLoad window loses it. Minimise instead
   of closing (idle cost measured: ~1% of one core). A resume feature would need the reader's goto message.
-- A source that gives the tablet only 50 mA (`/sys/class/power_supply/max77963-charger/current_max`) will not charge it
-  under load; it also means no USB networking (`10.11.99.1`). Use a wall adapter or another cable.
-- BusyBox quirks: `head -N` fails (use `head -n N`), `pgrep -x` and `getconf` are unreliable or missing.
 
 ## Boundaries (do not cross)
 - **Do not deobfuscate or mine Libby's scripts, and do not imitate its protocol.** Libby's `main.js` opens with
